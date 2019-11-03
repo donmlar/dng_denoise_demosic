@@ -1,0 +1,5 @@
+.idea/
+dataset/
+*.pyc
+resultset/mix1/
+resultset/rvr/model.ckpt.data-00000-of-00001
