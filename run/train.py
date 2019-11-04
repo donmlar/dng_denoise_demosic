@@ -7,32 +7,22 @@ import imageio
 from preprocess.package_cfa import *
 from preprocess.get_exif import *
 from preprocess.psnr import *
+from preprocess.copy_code import *
 from loss.loss import *
 from network.model import  *
 import random
-import exifread
-import threading
+from run.config import *
 # 网络输出使用两层unet，层间增加iso倍率残差
 # 输出降维到3层后 ,直接输出
 # 对低感光度照片使用反向白平衡计算，使用照片EXIF中白平衡信息倒数处理
 
-#增加双线程循环读取加载数据
+mark = "mix1"
 
 
-
-# # input_dir = '../dataset/nex/short/'
-# input_dir = '../dataset/texture/short/'
-# # gt_dir = '../dataset/nex/long/'
-# gt_dir = '../dataset/texture/long/'
-# # gt_png_dir = '../dataset/nex/cbm3d5/'
-# gt_png_dir = '../dataset/texture/cbm3d5/'
+backup(mark)
 
 
-input_dir = 'E:/Git_work/vivo_denoise/dataset/texture/short/'
-# gt_dir = '../dataset/nex/long/'
-gt_dir = 'E:/Git_work/vivo_denoise/dataset/texture/long/'
-# gt_png_dir = '../dataset/nex/cbm3d5/'
-gt_png_dir = 'E:/Git_work/vivo_denoise/dataset/texture/cbm3d5/'
+input_dir,gt_png_dir,test_input_dir,test_gt_png_dir = get_data(mark)
 
 
 train_fns = glob.glob(input_dir + '*.dng')
@@ -44,24 +34,15 @@ for i in range(len(train_fns)):
     # train_ids.append(train_fn.split('_')[-2])
     train_ids.append(train_fn.split('.')[0])
 
-ps_list =[96]
-train_size = 5
-buffer_size = 30
-# train_size = 3
-save_freq = 50
-log_freq = 5
-scaling_factor = 0.1
-bs = 4 # batch size for training
 
-black = 64
-white = 1023
+# 训练相关参数
+train_size,buffer_size,bs,save_freq,log_freq = train_param()
+# 训练使用分片大小
+ps = patch_size()
+# 训练数据归一化参数
+black,white = black_white()
 
 
-value = 0.84
-
-mark = "mix1"
-
-# result_dir = './result/'+str(ps)+"_"+str(bs)+"_"+str(value)+mark+"/"
 result_dir = '../resultset/'+""+mark+"/"
 checkpoint_dir = result_dir
 
@@ -186,32 +167,20 @@ for epoch in tqdm(range(lastepoch, lastepoch+4001)):
             in_path = in_files[np.random.random_integers(0, len(in_files) - 1)]
             _, in_fn = os.path.split(in_path)
 
-            # gt_files = glob.glob(gt_dir + '%s_*.dng' % train_id)
-            gt_files = glob.glob(gt_dir + '%s.dng' % train_id)
             gt_files = glob.glob(gt_png_dir + '%s.png' % train_id)
             gt_path = gt_files[0]
             _, gt_fn = os.path.split(gt_path)
 
             if input_images[tmp] is None:
                 raw = rawpy.imread(in_path)
-                # input_images[ind] = np.expand_dims(pack_raw_nex3(raw), axis=0)
 
                 im = PIL.Image.open(gt_path)
                 im = scipy.misc.fromimage(im)
 
-
-                # gt_raw = rawpy.imread(gt_path)
-                # im = gt_raw.raw_image.astype(np.float32)
-                # im = convert_2d(im ,1024).astype(np.float32)
-                # gt_raw.raw_image[:, :] = im.astype(np.uint16)
-                # im = gt_raw.postprocess(use_camera_wb=True, half_size=False, no_auto_bright=True, output_bps=16)
-                # im = np.rot90(im, 1)
                 tmp_wb , tmp_be = getWB(in_path)
                 im = upsidedown_wb(im , tmp_wb)
                 gt_images[tmp] = np.expand_dims(np.float32(im / 255.0), axis=0)
                 input_images[tmp] = np.expand_dims(pack_raw(raw, black, white), axis=0) *tmp_be
-                # input_flat_images[tmp] = (pack_raw_step1(raw, black, white , 0)) *tmp_be
-                # input_flat_images[tmp] = np.expand_dims(pack_raw_step1(raw, black, white , 0), axis=0) *tmp_be
 
             tmp = tmp +1
             tick2 = time.time()
@@ -248,8 +217,6 @@ for epoch in tqdm(range(lastepoch, lastepoch+4001)):
 
 
         input_image = input_images[ind]
-        ps = ps_list[random.randint(0,0)]
-
 
         # crop
         H = input_image.shape[1]
