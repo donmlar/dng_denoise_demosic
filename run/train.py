@@ -1,27 +1,28 @@
 from __future__ import division
-import os, time, scipy.io
+import scipy.io
 import PIL.Image
 import scipy.misc
 import scipy.signal
-import imageio
 from preprocess.package_cfa import *
 from preprocess.get_exif import *
 from preprocess.psnr import *
 from preprocess.copy_code import *
 from loss.loss import *
 from network.model import  *
-import random
-from run.config import *
+from config import *
 # 网络输出使用两层unet，层间增加iso倍率残差
 # 输出降维到3层后 ,直接输出
 # 对低感光度照片使用反向白平衡计算，使用照片EXIF中白平衡信息倒数处理
 
-mark = "mix1"
+mark = "texture"
 
 
 backup(mark)
 
-
+input_dir = ''
+gt_png_dir = ''
+test_input_dir = ''
+test_gt_png_dir  = ''
 input_dir,gt_png_dir,test_input_dir,test_gt_png_dir = get_data(mark)
 
 
@@ -33,6 +34,16 @@ for i in range(len(train_fns)):
     _, train_fn = os.path.split(train_fns[i])
     # train_ids.append(train_fn.split('_')[-2])
     train_ids.append(train_fn.split('.')[0])
+
+test_fns = glob.glob(test_input_dir + '*.dng')
+test_ids = []
+
+
+for i in range(len(test_fns)):
+    _, train_fn = os.path.split(test_fns[i])
+    # train_ids.append(train_fn.split('_')[-2])
+    test_ids.append(train_fn.split('.')[0])
+
 
 
 # 训练相关参数
@@ -121,6 +132,12 @@ saver_full = tf.train.Saver()
 gt_images = [None] * train_size
 input_images = [None] * train_size
 
+
+test_gt_images = [None] * len(test_fns)
+test_input_images = [None] * len(test_fns)
+
+
+
 allfolders = glob.glob(result_dir+'*0')
 lastepoch = 0
 for folder in allfolders:
@@ -187,8 +204,34 @@ for epoch in tqdm(range(lastepoch, lastepoch+4001)):
 
             print('read:' + str(tick2 - tick1))
             print(tmp)
+    # 加载测试图像数据
+    if test_input_images[0] is None:
 
-    #
+        test_gt_images = [None] * len(test_fns)
+        test_input_images = [None] * len(test_fns)
+        for i in range(len(test_fns)):
+
+            test_id = test_ids[i]
+            in_files = glob.glob(input_dir + '%s.*dng' % test_id)
+            in_path = in_files[np.random.random_integers(0, len(in_files) - 1)]
+            _, in_fn = os.path.split(in_path)
+
+            gt_files = glob.glob(gt_png_dir + '%s.png' % train_id)
+            gt_path = gt_files[0]
+            _, gt_fn = os.path.split(gt_path)
+
+
+            raw = rawpy.imread(in_path)
+            im = PIL.Image.open(gt_path)
+            im = scipy.misc.fromimage(im)
+            tmp_wb , tmp_be = getWB(in_path)
+            im = upsidedown_wb(im , tmp_wb)
+            test_gt_images[i] = np.expand_dims(np.float32(im / 255.0), axis=0)
+            test_input_images[i] = np.expand_dims(pack_raw(raw, black, white), axis=0) *tmp_be
+
+
+
+
     # if (epoch+1) % (save_freq*4) == 0:
     #
     #     for itmp in range(0, buffer_size):
@@ -261,6 +304,19 @@ for epoch in tqdm(range(lastepoch, lastepoch+4001)):
                                                        ,lr: learning_rate})
 
 
+        #     测试数据
+            if not os.path.isdir(result_dir + '%05d' % epoch):
+                os.makedirs(result_dir + '%05d' % epoch)
+            for k in range(len(test_ids)):
+                input_full = test_input_images[k]
+                output = sess.run(out_image, feed_dict={in_image: input_full } )
+                output = np.minimum(np.maximum(output, 0), 1)
+
+                output = output[0, :, :, :]
+                scipy.misc.toimage(output * 255, high=255, low=0, cmin=0, cmax=255).save(
+                    result_dir + '%05d/%s_00_test.jpg' % (epoch, test_ids[k]))
+
+
         elif cnt == 1 and epoch % log_freq == 0:
 
 
@@ -273,6 +329,11 @@ for epoch in tqdm(range(lastepoch, lastepoch+4001)):
 
 
             train_writer.add_summary(summary, epoch)
+
+
+
+
+
 
         else:
 

@@ -9,8 +9,8 @@ def get_data(mark):
         input_dir = base_data_path+'/dataset/texture/short/'
         gt_png_dir = base_data_path+'/dataset/texture/cbm3d5/'
 
-        test_input_dir = base_data_path+'/dataset/texture/short/'
-        test_gt_png_dir = base_data_path+'/dataset/texture/cbm3d5/'
+        test_input_dir = base_data_path+'/dataset/texture/test_dng/'
+        test_gt_png_dir = base_data_path+'/dataset/texture/test_png/'
 
 
         return input_dir,gt_png_dir,test_input_dir,test_gt_png_dir
